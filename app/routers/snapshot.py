@@ -1,7 +1,7 @@
 
 from fastapi import APIRouter, HTTPException, Query
 
-from app.dependencies import SessionDep
+from app.dependencies import SessionDep, ValidateDep
 from app.models import Snapshot
 from app.schemas import SnapshotCreate, SnapshotPublic
 from app.services import create_snapshot, get_snapshot_image
@@ -12,7 +12,8 @@ router = APIRouter(
 )
 
 @router.post("/", response_model=SnapshotPublic, status_code=201)
-async def create_snapshot_endpoint(session: SessionDep, payload: SnapshotCreate):
+async def create_snapshot_endpoint(session: SessionDep,
+                                   payload: ValidateDep):
     return await create_snapshot(session=session, payload=payload)
 
 @router.get("/", response_model=list[SnapshotPublic])
