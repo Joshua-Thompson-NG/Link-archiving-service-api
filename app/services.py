@@ -3,18 +3,33 @@ Business Logic
 """
 from datetime import datetime
 from pathlib import Path
+from urllib.parse import urlparse
 from uuid import uuid4
-from fastapi.responses import FileResponse
 
 from fastapi import HTTPException
+from fastapi.responses import FileResponse
 from playwright.async_api import Error, async_playwright
 from sqlalchemy.orm import Session
 
+from app.dependencies import is_safe_ip
 from app.models import Snapshot
 from app.schemas import SnapshotCreate
 
 SNAPSHOT = Path("snapshot")
 SNAPSHOT.mkdir(exist_ok=True)
+
+# Playwright URL validation for URL redirects to localhost and so on.
+async def intercept_requests(route):
+    parsed = urlparse(route.request.url)
+
+    if parsed.scheme in ("data", "blob"):
+        await route.continue_()
+        return
+
+    if parsed.scheme not in ("http", "https") or not parsed.hostname or not is_safe_ip(parsed.hostname):
+        await route.abort("blockedbyclient")
+        return
+    await route.continue_()
 
 async def create_snapshot(session: Session, payload: SnapshotCreate):
     snapshot_id = uuid4().hex
@@ -24,7 +39,9 @@ async def create_snapshot(session: Session, payload: SnapshotCreate):
         browser = await p.chromium.launch()
         try:
             page = await browser.new_page()
-            await page.goto(str(payload.url), timeout=10000,
+
+            await page.route("***/*", intercept_requests)
+            await page.goto(str(payload.url), timeout=25000,
                             wait_until="domcontentloaded")
             await page.screenshot(path=str(path), full_page=True)
         except Error as e:
@@ -64,3 +81,5 @@ async def get_snapshot_image(session: Session,
         content_disposition_type=disposition,
         filename=filename
     )
+
+
